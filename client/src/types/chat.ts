@@ -24,11 +24,34 @@ export interface Activity {
   imageUrl?: string;
 }
 
+// 增强型商品响应
+export interface EnhancedProduct extends Product {
+  recommendReason: string;
+}
+
+// 增强型活动响应
+export interface EnhancedActivity extends Activity {
+  recommendReason: string;
+}
+
 // 推荐响应
 export interface RecommendationResponse {
   text: string;
   items: Product[] | Activity[];
   type: IntentType;
+}
+
+// 增强型推荐响应
+export interface EnhancedRecommendationResponse extends RecommendationResponse {
+  queryContext: string;
+  items: EnhancedProduct[] | EnhancedActivity[];
+}
+
+// 流式响应
+export interface StreamResponse {
+  event: 'stream';
+  data: string;
+  done: boolean;
 }
 
 // 聊天消息
@@ -37,5 +60,6 @@ export interface ChatMessage {
   text: string;
   isUser: boolean;
   timestamp: Date;
-  recommendation?: RecommendationResponse;
+  recommendation?: RecommendationResponse | EnhancedRecommendationResponse;
+  streaming?: boolean;
 }

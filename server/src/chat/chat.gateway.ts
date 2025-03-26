@@ -7,7 +7,11 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
-import { ChatMessage, ChatResponse } from './interfaces/chat.interface';
+import {
+  ChatMessage,
+  ChatResponse,
+  StreamResponse,
+} from './interfaces/chat.interface';
 import { ChatError } from './errors/chat.error';
 
 @WebSocketGateway({
@@ -72,6 +76,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         event: 'error',
         data: '处理消息时发生错误',
       };
+    }
+  }
+
+  @SubscribeMessage('chat_stream')
+  async handleChatStream(client: Socket, payload: ChatMessage): Promise<void> {
+    try {
+      console.log('收到流式消息请求:', payload);
+
+      // 使用回调函数处理流式响应
+      await this.chatService.processMessageStream(
+        payload.message,
+        (chunk: string, done: boolean) => {
+          // 构建流式响应
+          const streamResponse: StreamResponse = {
+            event: 'stream',
+            data: chunk,
+            done: done,
+          };
+
+          // 向客户端发送流式响应
+          client.emit('stream', streamResponse);
+        },
+      );
+
+      console.log('流式消息处理完成');
+    } catch (error) {
+      console.error('处理流式消息错误:', error);
+      const errorResponse = {
+        event: 'error',
+        data: error instanceof ChatError ? error.message : '处理消息时发生错误',
+      };
+      client.emit('error', errorResponse);
     }
   }
 }

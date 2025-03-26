@@ -2,9 +2,24 @@ export interface ChatMessage {
   message: string;
 }
 
+export interface UserChatMessage {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+  recommendation?: RecommendationResponse | EnhancedRecommendationResponse;
+  streaming?: boolean;
+}
+
 export interface ChatResponse {
   event: 'chat' | 'error';
-  data: string | RecommendationResponse;
+  data: string | RecommendationResponse | EnhancedRecommendationResponse;
+}
+
+export interface StreamResponse {
+  event: 'stream';
+  data: string;
+  done: boolean;
 }
 
 export interface ChatError {
@@ -49,4 +64,30 @@ export interface RecommendationResponse {
   text: string;
   items: Product[] | Activity[];
   type: IntentType;
+}
+
+// 查询参数提炼结果
+export interface RefinedQuery {
+  keywords: string[];
+  userIntent: string;
+  preferences?: string[];
+  constraints?: string[];
+}
+
+// 增强型商品响应
+export interface EnhancedProduct extends Product {
+  recommendReason: string;
+}
+
+// 增强型活动响应
+export interface EnhancedActivity extends Activity {
+  recommendReason: string;
+}
+
+// 增强型推荐响应
+export interface EnhancedRecommendationResponse {
+  text: string;
+  items: EnhancedProduct[] | EnhancedActivity[];
+  type: IntentType;
+  queryContext: string;
 }

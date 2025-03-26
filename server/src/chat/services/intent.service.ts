@@ -34,13 +34,13 @@ export class IntentService {
             1. PRODUCT - 用户想要了解或购买商品
             2. ACTIVITY - 用户想要了解活动信息
             3. GENERAL - 用户在进行普通问答，不涉及商品或活动
-            
+
             你需要以JSON格式返回分析结果，格式为:
             {
               "intent": "PRODUCT|ACTIVITY|GENERAL",
               "keywords": ["关键词1", "关键词2", ...]
             }
-            
+
             只返回JSON格式的结果，不要有其他内容。`,
           },
           {

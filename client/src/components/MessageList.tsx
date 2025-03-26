@@ -1,6 +1,6 @@
 "use client";
 
-import { ChatMessage, IntentType } from "@/types/chat";
+import { ChatMessage, IntentType, EnhancedRecommendationResponse } from "@/types/chat";
 import { useEffect, useRef } from "react";
 
 interface MessageListProps {
@@ -16,6 +16,13 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 检查推荐是否是增强型推荐
+  const isEnhancedRecommendation = (
+    recommendation: any
+  ): recommendation is EnhancedRecommendationResponse => {
+    return recommendation && 'queryContext' in recommendation;
+  };
+
   return (
     <div className="space-y-4">
       {messages.map((message) => (
@@ -30,7 +37,12 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                 : "bg-white text-gray-800 border border-gray-200"
             }`}
           >
-            <p className="text-sm">{message.text}</p>
+            <p className="text-sm">{message.text}
+              {message.streaming && (
+                <span className="inline-block w-1.5 h-4 ml-1 bg-current animate-pulse rounded-sm" />
+              )}
+            </p>
+
             {message.recommendation && (
               <div className="mt-2">
                 {message.recommendation.type === IntentType.PRODUCT ? (
@@ -45,6 +57,11 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                         <p className="text-blue-600 mt-1">
                           ¥{product.price.toLocaleString()}
                         </p>
+                        {product.recommendReason && (
+                          <p className="mt-1 text-xs text-green-600 italic">
+                            推荐理由: {product.recommendReason}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -61,16 +78,27 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                           {new Date(activity.startDate).toLocaleDateString()} -{" "}
                           {new Date(activity.endDate).toLocaleDateString()}
                         </p>
+                        {activity.recommendReason && (
+                          <p className="mt-1 text-xs text-green-600 italic">
+                            推荐理由: {activity.recommendReason}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
+                )}
+                {isEnhancedRecommendation(message.recommendation) && message.recommendation.queryContext && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    基于您的需求: {message.recommendation.queryContext}
+                  </p>
                 )}
               </div>
             )}
           </div>
         </div>
       ))}
-      {isLoading && (
+
+      {isLoading && !messages.some(msg => msg.streaming) && (
         <div className="flex justify-start">
           <div className="bg-white rounded-lg p-3 border border-gray-200">
             <div className="flex space-x-2">
