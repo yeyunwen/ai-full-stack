@@ -8,11 +8,13 @@ import { QueryEnhancerService } from './services/query-enhancer.service';
 import {
   IntentType,
   // 这些接口实际上在代码中使用了，TypeScript可能无法追踪到
-  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-  RecommendationResponse,
   EnhancedRecommendationResponse,
-  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
   RefinedQuery,
+  Product,
+  Activity,
+  ProductQueryParams,
+  ActivityQueryParams,
+  ApiDataResponse,
 } from './interfaces/chat.interface';
 
 @Injectable()
@@ -55,17 +57,28 @@ export class ChatService {
       // 3. 根据意图类型处理消息
       switch (intentAnalysis.intent) {
         case IntentType.PRODUCT: {
+          // 提取商品专用查询参数
+          const productQueryParams =
+            await this.queryEnhancerService.extractProductQueryParams(
+              message,
+              refinedQuery,
+            );
+
+          console.log('提取的商品查询参数:', productQueryParams);
+
           // 获取商品推荐
           const basicRecommendation =
-            this.recommendationService.getProductRecommendations(
-              refinedQuery.keywords,
+            await this.recommendationService.getProductRecommendations(
+              productQueryParams,
             );
+
           // 增强商品推荐信息
           const enhancedProducts =
             await this.queryEnhancerService.addProductRecommendReasons(
-              basicRecommendation.items as any[],
+              basicRecommendation.items as Product[],
               refinedQuery,
             );
+
           // 返回增强的推荐响应
           return {
             text: basicRecommendation.text,
@@ -76,17 +89,28 @@ export class ChatService {
         }
 
         case IntentType.ACTIVITY: {
+          // 提取活动专用查询参数
+          const activityQueryParams =
+            await this.queryEnhancerService.extractActivityQueryParams(
+              message,
+              refinedQuery,
+            );
+
+          console.log('提取的活动查询参数:', activityQueryParams);
+
           // 获取活动推荐
           const basicRecommendation =
-            this.recommendationService.getActivityRecommendations(
-              refinedQuery.keywords,
+            await this.recommendationService.getActivityRecommendations(
+              activityQueryParams,
             );
+
           // 增强活动推荐信息
           const enhancedActivities =
             await this.queryEnhancerService.addActivityRecommendReasons(
-              basicRecommendation.items as any[],
+              basicRecommendation.items as Activity[],
               refinedQuery,
             );
+
           // 返回增强的推荐响应
           return {
             text: basicRecommendation.text,
@@ -117,7 +141,7 @@ export class ChatService {
    */
   async processMessageStream(
     message: string,
-    callback: (chunk: string, done: boolean) => void,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
   ): Promise<void> {
     try {
       // 1. 分析用户消息意图
@@ -133,13 +157,38 @@ export class ChatService {
       );
 
       // 3. 根据意图类型处理消息
+      let productQueryParams: ProductQueryParams;
+      let activityQueryParams: ActivityQueryParams;
+
       switch (intentAnalysis.intent) {
         case IntentType.PRODUCT:
-          await this.handleProductRecommendationStream(refinedQuery, callback);
+          // 提取商品专用查询参数
+          callback('\n提取商品搜索参数...', false);
+          productQueryParams =
+            await this.queryEnhancerService.extractProductQueryParams(
+              message,
+              refinedQuery,
+            );
+          await this.handleProductRecommendationStream(
+            productQueryParams,
+            refinedQuery,
+            callback,
+          );
           break;
 
         case IntentType.ACTIVITY:
-          await this.handleActivityRecommendationStream(refinedQuery, callback);
+          // 提取活动专用查询参数
+          callback('\n提取活动搜索参数...', false);
+          activityQueryParams =
+            await this.queryEnhancerService.extractActivityQueryParams(
+              message,
+              refinedQuery,
+            );
+          await this.handleActivityRecommendationStream(
+            activityQueryParams,
+            refinedQuery,
+            callback,
+          );
           break;
 
         case IntentType.GENERAL:
@@ -160,39 +209,37 @@ export class ChatService {
 
   /**
    * 处理商品推荐的流式响应
+   * @param queryParams 商品查询参数
    * @param refinedQuery 优化的查询参数
    * @param callback 回调函数
    */
   private async handleProductRecommendationStream(
+    queryParams: ProductQueryParams,
     refinedQuery: RefinedQuery,
-    callback: (chunk: string, done: boolean) => void,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
   ): Promise<void> {
     try {
-      // 1. 获取基础推荐
+      // 1. 获取商品推荐
       callback('正在为您搜索相关商品...', false);
-      const basicRecommendation =
-        this.recommendationService.getProductRecommendations(
-          refinedQuery.keywords,
-        );
+      const recommendation =
+        await this.recommendationService.getProductRecommendations(queryParams);
 
-      // 2. 增强商品推荐信息
-      callback('\n正在为您生成个性化推荐...', false);
-      const enhancedProducts =
-        await this.queryEnhancerService.addProductRecommendReasons(
-          basicRecommendation.items as any[],
-          refinedQuery,
-        );
+      // 2. 构建响应文本并流式返回
+      callback('\n\n' + recommendation.text + '\n\n', false);
 
-      // 3. 构建完整的增强推荐响应
-      const enhancedResponse: EnhancedRecommendationResponse = {
-        text: basicRecommendation.text,
-        items: enhancedProducts,
-        type: IntentType.PRODUCT,
-        queryContext: refinedQuery.userIntent,
-      };
+      // 3. 为商品生成推荐理由并流式返回
+      await this.generateProductRecommendationsStream(
+        recommendation.items as Product[],
+        refinedQuery,
+        callback,
+      );
 
-      // 4. 发送最终结果
-      callback(JSON.stringify(enhancedResponse), true);
+      // 4. 发送API数据用于前端展示
+      callback('', true, {
+        type: 'product',
+        items: recommendation.items as Product[],
+        isExactMatch: recommendation.isExactMatch,
+      });
     } catch (error) {
       console.error('商品推荐流处理错误:', error);
       callback('获取商品推荐失败，请稍后再试。', true);
@@ -201,42 +248,162 @@ export class ChatService {
 
   /**
    * 处理活动推荐的流式响应
+   * @param queryParams 活动查询参数
    * @param refinedQuery 优化的查询参数
    * @param callback 回调函数
    */
   private async handleActivityRecommendationStream(
+    queryParams: ActivityQueryParams,
     refinedQuery: RefinedQuery,
-    callback: (chunk: string, done: boolean) => void,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
   ): Promise<void> {
     try {
-      // 1. 获取基础推荐
+      // 1. 获取活动推荐
       callback('正在为您搜索相关活动...', false);
-      const basicRecommendation =
-        this.recommendationService.getActivityRecommendations(
-          refinedQuery.keywords,
+      const recommendation =
+        await this.recommendationService.getActivityRecommendations(
+          queryParams,
         );
 
-      // 2. 增强活动推荐信息
-      callback('\n正在为您生成个性化推荐...', false);
-      const enhancedActivities =
-        await this.queryEnhancerService.addActivityRecommendReasons(
-          basicRecommendation.items as any[],
-          refinedQuery,
-        );
+      // 2. 构建响应文本并流式返回
+      callback('\n\n' + recommendation.text + '\n\n', false);
 
-      // 3. 构建完整的增强推荐响应
-      const enhancedResponse: EnhancedRecommendationResponse = {
-        text: basicRecommendation.text,
-        items: enhancedActivities,
-        type: IntentType.ACTIVITY,
-        queryContext: refinedQuery.userIntent,
-      };
+      // 3. 为活动生成推荐理由并流式返回
+      await this.generateActivityRecommendationsStream(
+        recommendation.items as Activity[],
+        refinedQuery,
+        callback,
+      );
 
-      // 4. 发送最终结果
-      callback(JSON.stringify(enhancedResponse), true);
+      // 4. 发送API数据用于前端展示
+      callback('', true, {
+        type: 'activity',
+        items: recommendation.items as Activity[],
+        isExactMatch: recommendation.isExactMatch,
+      });
     } catch (error) {
       console.error('活动推荐流处理错误:', error);
       callback('获取活动推荐失败，请稍后再试。', true);
+    }
+  }
+
+  /**
+   * 为商品生成推荐理由并流式返回
+   * @param products 商品列表
+   * @param refinedQuery 优化的查询参数
+   * @param callback 回调函数
+   */
+  private async generateProductRecommendationsStream(
+    products: Product[],
+    refinedQuery: RefinedQuery,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
+  ): Promise<void> {
+    try {
+      // 构建用于AI的提示
+      const prompt = `
+      用户查询意图: "${refinedQuery.userIntent}"
+      用户关键词: "${refinedQuery.keywords.join(', ')}"
+      ${refinedQuery.preferences ? `用户偏好: "${refinedQuery.preferences.join(', ')}"` : ''}
+      ${refinedQuery.constraints ? `用户限制条件: "${refinedQuery.constraints.join(', ')}"` : ''}
+
+      根据用户的需求，为以下商品生成一段综合推荐，突出这些商品如何满足用户需求。
+      用通俗易懂的语言，解释为什么这些商品适合用户。
+      生成的推荐内容最多不要超过300字，语言自然流畅，避免过度营销。
+      使用emoji符号开头，并且保持回答的连贯性和专业性，回答结构清晰，明了。
+
+      商品列表:
+      ${products.map((p) => `ID: ${p.id}, 名称: ${p.name}, 价格: ${p.retailPrice}元, 销量: ${p.sales}`).join('\n')}
+      `;
+
+      // 调用OpenAI API的流式接口
+      const stream = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              '你是一个专业的商品推荐助手，擅长为商品生成个性化的推荐理由，内容生动有趣、通俗易懂，能够帮助用户快速理解商品的价值和适用场景。',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          callback(content, false);
+        }
+      }
+    } catch (error) {
+      console.error('生成商品推荐理由流式响应时出错:', error);
+      callback('无法生成详细推荐理由，但您可以查看下方商品。', false);
+    }
+  }
+
+  /**
+   * 为活动生成推荐理由并流式返回
+   * @param activities 活动列表
+   * @param refinedQuery 优化的查询参数
+   * @param callback 回调函数
+   */
+  private async generateActivityRecommendationsStream(
+    activities: Activity[],
+    refinedQuery: RefinedQuery,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
+  ): Promise<void> {
+    try {
+      // 构建用于AI的提示
+      const prompt = `
+      用户查询意图: "${refinedQuery.userIntent}"
+      用户关键词: "${refinedQuery.keywords.join(', ')}"
+      ${refinedQuery.preferences ? `用户偏好: "${refinedQuery.preferences.join(', ')}"` : ''}
+      ${refinedQuery.constraints ? `用户限制条件: "${refinedQuery.constraints.join(', ')}"` : ''}
+
+      根据用户的需求，为以下活动生成一段综合推荐，突出这些活动如何满足用户需求。
+      用通俗易懂的语言，解释为什么这些活动适合用户。
+      生成的推荐内容最多不要超过300字，语言自然流畅，避免过度营销。
+      使用emoji符号开头，并且保持回答的连贯性和专业性，回答结构清晰，明了。
+
+      注意:不要返回活动ID
+
+      活动列表:
+      ${activities.map((a) => `ID: ${a.id}, 标题: ${a.title}, 时间: ${a.startTime}至${a.endTime}${a.location ? `, 地点: ${a.location}` : ''}`).join('\n')}
+      `;
+
+      // 调用OpenAI API的流式接口
+      const stream = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              '你是一个专业的活动推荐助手，擅长为活动生成个性化的推荐理由，内容生动有趣、通俗易懂，能够帮助用户快速理解活动的价值和参与意义。',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          callback(content, false);
+        }
+      }
+    } catch (error) {
+      console.error('生成活动推荐理由流式响应时出错:', error);
+      callback('无法生成详细推荐理由，但您可以查看下方活动。', false);
     }
   }
 
@@ -272,7 +439,7 @@ export class ChatService {
    */
   private async getAiResponseStream(
     message: string,
-    callback: (chunk: string, done: boolean) => void,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
   ): Promise<void> {
     const stream = await this.openai.chat.completions.create({
       model: this.model,
@@ -298,7 +465,7 @@ export class ChatService {
       }
     }
 
-    // 标记流结束
+    // 标记流结束，不传递API数据
     callback('', true);
   }
 }

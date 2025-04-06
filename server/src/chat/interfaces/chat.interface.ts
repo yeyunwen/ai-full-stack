@@ -20,6 +20,7 @@ export interface StreamResponse {
   event: 'stream';
   data: string;
   done: boolean;
+  apiData?: ApiDataResponse;
 }
 
 export interface ChatError {
@@ -42,21 +43,43 @@ export interface IntentAnalysisResult {
 
 // 商品接口
 export interface Product {
-  id: string;
+  id: number;
   name: string;
-  description: string;
-  price: number;
-  imageUrl?: string;
+  picUrl: string;
+  retailPrice: number;
+  sales: number;
+}
+
+// 商品API响应接口
+export interface ProductResponse {
+  data: {
+    goods: Product[];
+    flag: boolean;
+  };
 }
 
 // 活动接口
 export interface Activity {
   id: string;
   title: string;
-  description: string;
-  startDate: string;
-  endDate: string;
-  imageUrl?: string;
+  startTime: string;
+  endTime: string;
+  /** 封面 */
+  cover?: string;
+  /** 地点 */
+  location?: string;
+  /** 浏览量 */
+  browseNum?: number;
+  /** 标签 ,逗号分隔 */
+  tags?: string;
+}
+
+// 活动API响应接口
+export interface ActivityResponse {
+  data: {
+    activities: Activity[];
+    flag: boolean;
+  };
 }
 
 // 推荐响应
@@ -64,14 +87,37 @@ export interface RecommendationResponse {
   text: string;
   items: Product[] | Activity[];
   type: IntentType;
+  isExactMatch?: boolean; // 是否是精确匹配的结果
 }
 
-// 查询参数提炼结果
+// 通用查询参数
 export interface RefinedQuery {
   keywords: string[];
   userIntent: string;
   preferences?: string[];
   constraints?: string[];
+}
+
+// 商品查询参数
+export interface ProductQueryParams {
+  // 基础搜索参数
+  keywords: string[]; // 关键词列表
+  categoryName?: string; // 商品分类
+  goodsName?: string; // 商品名称
+  // 价格范围
+  minPrice?: number; // 最低价格
+  maxPrice?: number; // 最高价格
+}
+
+// 活动查询参数
+export interface ActivityQueryParams {
+  // 基础搜索参数
+  keywords: string[]; // 关键词列表
+  title?: string; // 活动名称
+
+  // 时间范围
+  startTime?: string; // 开始日期（YYYY-MM-DD）
+  endTime?: string; // 结束日期（YYYY-MM-DD）
 }
 
 // 增强型商品响应
@@ -90,4 +136,12 @@ export interface EnhancedRecommendationResponse {
   items: EnhancedProduct[] | EnhancedActivity[];
   type: IntentType;
   queryContext: string;
+  isExactMatch?: boolean; // 是否是精确匹配的结果
+}
+
+// API数据响应接口
+export interface ApiDataResponse {
+  type: 'product' | 'activity';
+  items: Product[] | Activity[];
+  isExactMatch?: boolean;
 }

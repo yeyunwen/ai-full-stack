@@ -19,9 +19,7 @@ export default function RootLayout({
             <h1 className="text-2xl font-bold">AI 聊天助手</h1>
           </header>
           <main className="flex-1 container mx-auto p-4">{children}</main>
-          <footer className="bg-gray-100 p-4 text-center text-gray-500">
-            © 2023 AI 聊天助手
-          </footer>
+          <footer className="bg-gray-100 p-4 text-center text-gray-500"></footer>
         </div>
       </body>
     </html>

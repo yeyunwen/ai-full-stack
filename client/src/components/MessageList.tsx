@@ -1,14 +1,33 @@
 "use client";
 
-import { ChatMessage, IntentType, EnhancedRecommendationResponse } from "@/types/chat";
+import {
+  ChatMessage,
+  IntentType,
+  EnhancedRecommendationResponse,
+  Product,
+  Activity,
+  ApiDataResponse,
+} from "@/types/chat";
 import { useEffect, useRef } from "react";
+import ProductCard from "./ProductCard";
+import ActivityCard from "./ActivityCard";
+import ProductCarousel from "./ProductCarousel";
+import ActivityCarousel from "./ActivityCarousel";
+import MarkdownRenderer from "./MarkdownRenderer";
 
 interface MessageListProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  onProductClick?: (product: Product) => void;
+  onActivityClick?: (activity: Activity) => void;
 }
 
-export default function MessageList({ messages, isLoading }: MessageListProps) {
+export default function MessageList({
+  messages,
+  isLoading,
+  onProductClick,
+  onActivityClick,
+}: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 自动滚动到最新消息
@@ -20,7 +39,21 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
   const isEnhancedRecommendation = (
     recommendation: any
   ): recommendation is EnhancedRecommendationResponse => {
-    return recommendation && 'queryContext' in recommendation;
+    return recommendation && "queryContext" in recommendation;
+  };
+
+  // 处理商品点击
+  const handleProductClick = (product: Product) => {
+    if (onProductClick) {
+      onProductClick(product);
+    }
+  };
+
+  // 处理活动点击
+  const handleActivityClick = (activity: Activity) => {
+    if (onActivityClick) {
+      onActivityClick(activity);
+    }
   };
 
   return (
@@ -31,74 +64,116 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
           className={`flex ${message.isUser ? "justify-end" : "justify-start"}`}
         >
           <div
-            className={`max-w-[80%] rounded-lg p-3 ${
+            className={`${
               message.isUser
-                ? "bg-blue-500 text-white"
-                : "bg-white text-gray-800 border border-gray-200"
-            }`}
+                ? "bg-blue-500 text-white max-w-[80%]"
+                : "bg-white text-gray-800 border border-gray-200 w-full"
+            } rounded-lg p-3`}
           >
-            <p className="text-sm">{message.text}
-              {message.streaming && (
-                <span className="inline-block w-1.5 h-4 ml-1 bg-current animate-pulse rounded-sm" />
-              )}
-            </p>
+            {message.isUser ? (
+              <p className="text-sm">{message.text}</p>
+            ) : (
+              <div className={message.streaming ? "ai-message-streaming" : ""}>
+                <MarkdownRenderer
+                  content={message._renderText || message.text}
+                  className={message.isUser ? "text-white" : "text-gray-800"}
+                />
+                {message.streaming && (
+                  <span className="inline-block w-1.5 h-4 ml-1 bg-current animate-pulse rounded-sm" />
+                )}
+              </div>
+            )}
 
-            {message.recommendation && (
+            {/* 推荐内容展示 - 旧实现，使用网格布局 */}
+            {message.recommendation && !message.apiData && (
               <div className="mt-2">
                 {message.recommendation.type === IntentType.PRODUCT ? (
-                  <div className="space-y-2">
-                    {(message.recommendation.items as any[]).map((product) => (
-                      <div
-                        key={product.id}
-                        className="bg-gray-50 p-2 rounded-md text-sm"
-                      >
-                        <h4 className="font-medium">{product.name}</h4>
-                        <p className="text-gray-600">{product.description}</p>
-                        <p className="text-blue-600 mt-1">
-                          ¥{product.price.toLocaleString()}
-                        </p>
-                        {product.recommendReason && (
-                          <p className="mt-1 text-xs text-green-600 italic">
-                            推荐理由: {product.recommendReason}
-                          </p>
-                        )}
+                  <div className="space-y-2 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(message.recommendation.items as any[])
+                        .slice(0, 5)
+                        .map((product) => (
+                          <ProductCard
+                            key={product.id}
+                            product={product}
+                            recommendReason={product.recommendReason}
+                            onClick={handleProductClick}
+                          />
+                        ))}
+                    </div>
+                    {message.recommendation.items.length > 5 && (
+                      <div className="text-xs text-gray-500 mt-1 text-right">
+                        仅显示前5个商品，共{message.recommendation.items.length}
+                        个匹配结果
                       </div>
-                    ))}
+                    )}
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {(message.recommendation.items as any[]).map((activity) => (
-                      <div
-                        key={activity.id}
-                        className="bg-gray-50 p-2 rounded-md text-sm"
-                      >
-                        <h4 className="font-medium">{activity.title}</h4>
-                        <p className="text-gray-600">{activity.description}</p>
-                        <p className="text-gray-500 text-xs mt-1">
-                          {new Date(activity.startDate).toLocaleDateString()} -{" "}
-                          {new Date(activity.endDate).toLocaleDateString()}
-                        </p>
-                        {activity.recommendReason && (
-                          <p className="mt-1 text-xs text-green-600 italic">
-                            推荐理由: {activity.recommendReason}
-                          </p>
-                        )}
+                  <div className="space-y-2 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(message.recommendation.items as any[])
+                        .slice(0, 5)
+                        .map((activity) => (
+                          <ActivityCard
+                            key={activity.id}
+                            activity={activity}
+                            recommendReason={activity.recommendReason}
+                            onClick={handleActivityClick}
+                          />
+                        ))}
+                    </div>
+                    {message.recommendation.items.length > 5 && (
+                      <div className="text-xs text-gray-500 mt-1 text-right">
+                        仅显示前5个活动，共{message.recommendation.items.length}
+                        个匹配结果
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
-                {isEnhancedRecommendation(message.recommendation) && message.recommendation.queryContext && (
-                  <p className="mt-2 text-xs text-gray-500">
-                    基于您的需求: {message.recommendation.queryContext}
-                  </p>
+                <div className="mt-2 text-xs text-gray-500">
+                  {message.recommendation.isExactMatch ? (
+                    <span className="text-green-600">✓ 精确匹配结果</span>
+                  ) : (
+                    <span>系统推荐结果</span>
+                  )}
+                  {isEnhancedRecommendation(message.recommendation) &&
+                    message.recommendation.queryContext && (
+                      <p className="mt-1">
+                        基于您的需求: {message.recommendation.queryContext}
+                      </p>
+                    )}
+                </div>
+              </div>
+            )}
+
+            {/* API数据展示 - 新实现，使用横向滑动 */}
+            {message.apiData && (
+              <div className="mt-3">
+                {message.apiData.type === "product" ? (
+                  <ProductCarousel
+                    products={message.apiData.items as Product[]}
+                    onProductClick={handleProductClick}
+                  />
+                ) : (
+                  <ActivityCarousel
+                    activities={message.apiData.items as Activity[]}
+                    onActivityClick={handleActivityClick}
+                  />
                 )}
+                <div className="mt-2 text-xs text-gray-500 pl-4">
+                  {message.apiData.isExactMatch ? (
+                    <span className="text-green-600">✓ 精确匹配结果</span>
+                  ) : (
+                    <span>系统推荐结果</span>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </div>
       ))}
 
-      {isLoading && !messages.some(msg => msg.streaming) && (
+      {isLoading && !messages.some((msg) => msg.streaming) && (
         <div className="flex justify-start">
           <div className="bg-white rounded-lg p-3 border border-gray-200">
             <div className="flex space-x-2">

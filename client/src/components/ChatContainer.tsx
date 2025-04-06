@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Socket } from "socket.io-client";
-import { 
-  ChatMessage, 
-  StreamResponse, 
+import {
+  ChatMessage,
+  StreamResponse,
   RecommendationResponse,
-  EnhancedRecommendationResponse 
+  EnhancedRecommendationResponse,
+  Product,
+  Activity,
 } from "@/types/chat";
 import { getSocket, closeSocket } from "@/utils/socket";
 import MessageList from "./MessageList";
@@ -34,11 +36,13 @@ export default function ChatContainer() {
           addMessage(response, false);
         } else if (response && typeof response === "object") {
           // 检查是否是增强型推荐响应
-          const isEnhanced = response.queryContext && 
-            response.items && response.items.some((item: any) => item.recommendReason);
-          
+          const isEnhanced =
+            response.queryContext &&
+            response.items &&
+            response.items.some((item: any) => item.recommendReason);
+
           console.log("接收到的推荐类型:", isEnhanced ? "增强型" : "基本型");
-          
+
           // 推荐内容回复
           addRecommendationMessage(response);
         }
@@ -70,43 +74,59 @@ export default function ChatContainer() {
 
   // 处理流式响应
   const handleStreamResponse = (response: StreamResponse) => {
-    const { data, done } = response;
-    
+    const { data, done, apiData } = response;
+
     // 保存当前的messageId，防止竞态条件
     const currentStreamingId = streamingMessageIdRef.current;
-    
+
     // 尝试解析JSON数据（针对推荐内容）
     const tryParseRecommendation = (jsonString: string) => {
       try {
-        if (jsonString && jsonString.startsWith('{') && jsonString.endsWith('}')) {
+        if (
+          jsonString &&
+          jsonString.startsWith("{") &&
+          jsonString.endsWith("}")
+        ) {
           const jsonData = JSON.parse(jsonString);
-          
+
           // 验证是否为推荐数据结构
           if (jsonData.text && jsonData.items && jsonData.type) {
             // 检查是否为增强型推荐
-            const isEnhanced = jsonData.queryContext && 
+            const isEnhanced =
+              jsonData.queryContext &&
               jsonData.items.some((item: any) => item.recommendReason);
-            
+
             console.log("推荐类型:", isEnhanced ? "增强型" : "基本型");
+            console.log("精确匹配:", jsonData.isExactMatch ? "是" : "否");
             return { isValid: true, data: jsonData };
           }
         }
         return { isValid: false };
       } catch (e) {
-        console.log('JSON解析失败:', e);
+        console.log("JSON解析失败:", e);
         return { isValid: false };
       }
     };
 
     // 处理现有消息的更新
     if (currentStreamingId) {
-      setMessages(prevMessages => {
+      setMessages((prevMessages) => {
         // 在回调内部再次检查currentStreamingId，以防setState排队期间发生变化
         if (!currentStreamingId) return prevMessages;
-        
-        return prevMessages.map(msg => {
+
+        return prevMessages.map((msg) => {
           if (msg.id !== currentStreamingId) return msg;
-          
+
+          // 检查是否有API数据
+          if (apiData) {
+            console.log("接收到API数据:", apiData);
+            return {
+              ...msg,
+              apiData,
+              streaming: false,
+            };
+          }
+
           // 检查是否为JSON推荐数据
           const parseResult = tryParseRecommendation(data);
           if (parseResult.isValid) {
@@ -114,26 +134,52 @@ export default function ChatContainer() {
               ...msg,
               text: parseResult.data.text,
               recommendation: parseResult.data,
-              streaming: false
+              streaming: false,
             };
           }
-          
+
           // 普通文本处理
+          let updatedText = msg.text + data;
+
+          // 优化Markdown渲染，保持代码块完整性
+          const lastCodeBlockStart = updatedText.lastIndexOf("```");
+          if (lastCodeBlockStart !== -1) {
+            const codeBlocksCount = (updatedText.match(/```/g) || []).length;
+            // 如果是奇数个```，说明代码块没有关闭
+            if (codeBlocksCount % 2 !== 0) {
+              // 添加临时关闭标签用于渲染，但保持流式效果
+              return {
+                ...msg,
+                text: updatedText,
+                _renderText: updatedText + "\n```",
+                streaming: !done,
+              };
+            }
+          }
+
           return {
             ...msg,
-            text: msg.text + data,
-            streaming: !done
+            text: updatedText,
+            _renderText: undefined, // 清除临时渲染文本
+            streaming: !done,
           };
         });
       });
-    } 
+    }
     // 创建新消息
-    else if (data) {
+    else if (data || apiData) {
       const newMessageId = uuidv4();
       streamingMessageIdRef.current = newMessageId;
-      
+
+      // 如果有apiData但没有文本数据，这种情况不应该出现
+      if (apiData && !data) {
+        console.warn("收到apiData但没有对应的文本内容");
+      }
+
       // 检查是否为JSON推荐数据
-      const parseResult = tryParseRecommendation(data);
+      const parseResult = data
+        ? tryParseRecommendation(data)
+        : { isValid: false };
       if (parseResult.isValid) {
         const newMessage: ChatMessage = {
           id: newMessageId,
@@ -141,11 +187,11 @@ export default function ChatContainer() {
           isUser: false,
           timestamp: new Date(),
           recommendation: parseResult.data,
-          streaming: false
+          streaming: false,
         };
-        
-        setMessages(prev => [...prev, newMessage]);
-        
+
+        setMessages((prev) => [...prev, newMessage]);
+
         // 只有在完成时才重置引用
         if (done) {
           streamingMessageIdRef.current = null;
@@ -153,19 +199,20 @@ export default function ChatContainer() {
         }
         return;
       }
-      
+
       // 普通文本消息
       const newMessage: ChatMessage = {
         id: newMessageId,
-        text: data,
+        text: data || "",
         isUser: false,
         timestamp: new Date(),
-        streaming: !done
+        apiData: apiData, // 添加API数据
+        streaming: !done,
       };
-      
-      setMessages(prev => [...prev, newMessage]);
+
+      setMessages((prev) => [...prev, newMessage]);
     }
-    
+
     // 流结束处理 - 修改为在setState回调后执行
     if (done) {
       // 使用setTimeout确保所有setState操作都已完成再重置状态
@@ -220,10 +267,29 @@ export default function ChatContainer() {
     setMessages((prev) => [...prev, newMessage]);
   };
 
+  // 处理商品点击事件
+  const handleProductClick = (product: Product) => {
+    console.log("商品点击:", product);
+    // 跳转到商品详情页面，实际项目中应该使用路由导航
+    window.open(`/product/${product.id}`, "_blank");
+  };
+
+  // 处理活动点击事件
+  const handleActivityClick = (activity: Activity) => {
+    console.log("活动点击:", activity);
+    // 跳转到活动详情页面
+    window.open(`/activity/${activity.id}`, "_blank");
+  };
+
   return (
     <div className="flex flex-col h-[70vh] bg-gray-50 rounded-lg shadow-md overflow-hidden border border-gray-200">
       <div className="flex-1 overflow-y-auto p-4">
-        <MessageList messages={messages} isLoading={isLoading} />
+        <MessageList
+          messages={messages}
+          isLoading={isLoading}
+          onProductClick={handleProductClick}
+          onActivityClick={handleActivityClick}
+        />
         {error && (
           <div className="p-2 bg-red-100 text-red-700 rounded-md mt-2">
             错误: {error}

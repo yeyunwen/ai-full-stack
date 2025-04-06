@@ -4,12 +4,13 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ChatModule } from './chat/chat.module';
 import openaiConfig from './config/openai.config';
+import serverConfig from './config/server.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [openaiConfig],
+      load: [openaiConfig, serverConfig],
     }),
     ChatModule,
   ],

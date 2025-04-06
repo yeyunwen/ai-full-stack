@@ -11,6 +11,7 @@ import {
   ChatMessage,
   ChatResponse,
   StreamResponse,
+  ApiDataResponse,
 } from './interfaces/chat.interface';
 import { ChatError } from './errors/chat.error';
 
@@ -87,12 +88,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // 使用回调函数处理流式响应
       await this.chatService.processMessageStream(
         payload.message,
-        (chunk: string, done: boolean) => {
+        (chunk: string, done: boolean, apiData?: ApiDataResponse) => {
           // 构建流式响应
           const streamResponse: StreamResponse = {
             event: 'stream',
             data: chunk,
             done: done,
+            apiData: apiData,
           };
 
           // 向客户端发送流式响应

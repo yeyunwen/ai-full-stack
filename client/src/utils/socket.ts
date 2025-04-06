@@ -1,12 +1,13 @@
 import { io, Socket } from "socket.io-client";
+import { SERVER_CONFIG } from "./config";
 
 let socket: Socket | null = null;
 
 // 创建Websocket连接
 export const getSocket = (): Socket => {
   if (!socket) {
-    // 根据环境确定WebSocket连接地址
-    const socketUrl = "ws://localhost:3001";
+    // 从配置中获取WebSocket连接地址
+    const socketUrl = SERVER_CONFIG.WS_URL;
 
     console.log("socketUrl", socketUrl);
     socket = io(`${socketUrl}/chat`, {
@@ -18,7 +19,7 @@ export const getSocket = (): Socket => {
       timeout: 20000,
       forceNew: true,
       autoConnect: true,
-      path: "/socket.io",
+      path: SERVER_CONFIG.WS_PATH,
     });
 
     // 连接事件监听
