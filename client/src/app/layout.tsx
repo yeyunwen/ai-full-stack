@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI 聊天助手",
-  description: "一个智能AI聊天应用，可推荐商品和活动",
+  title: "AI 团团",
+  description: "一个智能AI聊天应用，可推荐商品、活动、路线",
 };
 
 export default function RootLayout({

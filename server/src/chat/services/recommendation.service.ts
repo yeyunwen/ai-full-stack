@@ -10,6 +10,10 @@ import {
   ActivityQueryParams,
   ProductResponse,
   ActivityResponse,
+  Journey,
+  JourneyResponse,
+  Coupon,
+  CouponResponse,
 } from '../interfaces/chat.interface';
 
 @Injectable()
@@ -201,6 +205,46 @@ export class RecommendationService {
         text: `很抱歉，搜索服务暂时不可用，以下是一些近期热门活动推荐：`,
         items: randomActivities,
         type: IntentType.ACTIVITY,
+        isExactMatch: false,
+      };
+    }
+  }
+
+  async getJourneyRecommendations(): Promise<RecommendationResponse> {
+    try {
+      const { journey, isExactMatch } = await this.fetchJourneyFromApi();
+      return {
+        text: `根据您的需求，为您找到${journey.length > 5 ? `${journey.length}个匹配行程，以下是其中的5个` : '以下匹配行程'}：`,
+        items: journey,
+        type: IntentType.JOURNEY,
+        isExactMatch,
+      };
+    } catch (error) {
+      console.error('获取行程推荐失败:', error);
+      return {
+        text: `很抱歉，搜索服务暂时不可用`,
+        items: [],
+        type: IntentType.JOURNEY,
+        isExactMatch: false,
+      };
+    }
+  }
+
+  async getCouponRecommendations(): Promise<RecommendationResponse> {
+    try {
+      const { coupons, isExactMatch } = await this.fetchCouponsFromApi();
+      return {
+        text: `根据您的需求，为您找到${coupons.length > 5 ? `${coupons.length}个匹配优惠券，以下是其中的5个` : '以下匹配优惠券'}：`,
+        items: coupons,
+        type: IntentType.COUPON,
+        isExactMatch,
+      };
+    } catch (error) {
+      console.error('获取优惠券推荐失败:', error);
+      return {
+        text: `很抱歉，搜索服务暂时不可用`,
+        items: [],
+        type: IntentType.COUPON,
         isExactMatch: false,
       };
     }
@@ -433,6 +477,159 @@ export class RecommendationService {
             ? filteredActivities.slice(0, 5)
             : this.getRandomItems(this.activities, 3),
           isExactMatch: hasMatches,
+        };
+      }
+
+      // 如果不使用模拟数据，则抛出一个新的错误
+      throw new Error(
+        '无法获取活动数据：' +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  private async fetchJourneyFromApi(): Promise<{
+    journey: Journey[];
+    isExactMatch: boolean;
+  }> {
+    try {
+      // 检查API基础URL是否配置
+      if (!this.apiBaseUrl) {
+        throw new Error('未配置API基础URL，请检查环境变量SERVER_API_BASE_URL');
+      }
+
+      console.log('调用行程API:', `${this.apiBaseUrl}/api/route/list`);
+
+      // 调用外部API获取数据
+      const response = await axios.get<JourneyResponse>(
+        `${this.apiBaseUrl}/api/route/list`,
+        {
+          headers: {
+            token: `${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 5000, // 5秒超时
+        },
+      );
+
+      if (response.status === 200 && response.data) {
+        const { data } = response.data;
+        console.log('行程数据:', data);
+
+        // 验证活动数据
+        if (Array.isArray(data) && data.length > 0) {
+          return {
+            journey: data.slice(0, 5), // 确保最多返回5个活动
+            isExactMatch: true, // flag为true表示精确匹配，false表示系统推荐
+          };
+        }
+      }
+
+      throw new Error('API返回数据格式错误');
+    } catch (error) {
+      console.error('从API获取行程失败:', error);
+
+      // 检查是否是API相关错误
+      if (axios.isAxiosError(error)) {
+        const axiosError = error;
+        if (axiosError.response) {
+          console.error('API响应状态码:', axiosError.response.status);
+          console.error('API响应数据:', axiosError.response.data);
+        } else if (axiosError.request) {
+          console.error('未收到API响应:', axiosError.request);
+        } else {
+          console.error('请求配置错误:', axiosError.message);
+        }
+      }
+
+      // 在测试环境或API不可用时，使用模拟数据
+      if (
+        process.env.NODE_ENV === 'development' ||
+        process.env.USE_MOCK_DATA === 'true'
+      ) {
+        console.log('使用模拟活动数据');
+
+        return {
+          journey: [],
+          isExactMatch: false,
+        };
+      }
+
+      // 如果不使用模拟数据，则抛出一个新的错误
+      throw new Error(
+        '无法获取活动数据：' +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+
+  private async fetchCouponsFromApi(): Promise<{
+    coupons: Coupon[];
+    isExactMatch: boolean;
+  }> {
+    try {
+      // 检查API基础URL是否配置
+      if (!this.apiBaseUrl) {
+        throw new Error('未配置API基础URL，请检查环境变量SERVER_API_BASE_URL');
+      }
+
+      console.log(
+        '调用行程API:',
+        `${this.apiBaseUrl}/api/coupon/activity/queryList`,
+      );
+
+      // 调用外部API获取数据
+      const response = await axios.get<CouponResponse>(
+        `${this.apiBaseUrl}/api/coupon/activity/queryList`,
+        {
+          headers: {
+            token: `${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 5000, // 5秒超时
+        },
+      );
+
+      if (response.status === 200 && response.data) {
+        const { data } = response.data;
+        console.log('优惠券数据:', data);
+        const { coupons, flag } = data;
+
+        // 验证活动数据
+        if (Array.isArray(coupons) && coupons.length > 0) {
+          return {
+            coupons: coupons.slice(0, 5), // 确保最多返回5个活动
+            isExactMatch: flag, // flag为true表示精确匹配，false表示系统推荐
+          };
+        }
+      }
+
+      throw new Error('API返回数据格式错误');
+    } catch (error) {
+      console.error('从API获取优惠券失败:', error);
+
+      // 检查是否是API相关错误
+      if (axios.isAxiosError(error)) {
+        const axiosError = error;
+        if (axiosError.response) {
+          console.error('API响应状态码:', axiosError.response.status);
+          console.error('API响应数据:', axiosError.response.data);
+        } else if (axiosError.request) {
+          console.error('未收到API响应:', axiosError.request);
+        } else {
+          console.error('请求配置错误:', axiosError.message);
+        }
+      }
+
+      // 在测试环境或API不可用时，使用模拟数据
+      if (
+        process.env.NODE_ENV === 'development' ||
+        process.env.USE_MOCK_DATA === 'true'
+      ) {
+        console.log('使用模拟优惠券数据');
+
+        return {
+          coupons: [],
+          isExactMatch: false,
         };
       }
 

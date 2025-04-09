@@ -2,6 +2,7 @@
 export enum IntentType {
   PRODUCT = "PRODUCT", // 商品推荐意图
   ACTIVITY = "ACTIVITY", // 活动推荐意图
+  JOURNEY = "JOURNEY", // 行程推荐意图
   GENERAL = "GENERAL", // 普通问答意图
 }
 
@@ -51,7 +52,7 @@ export interface EnhancedActivity extends Activity {
 // 推荐响应
 export interface RecommendationResponse {
   text: string;
-  items: Product[] | Activity[];
+  items: Product[] | Activity[] | Journey[];
   type: IntentType;
   isExactMatch?: boolean; // 是否是精确匹配的结果
 }
@@ -59,13 +60,13 @@ export interface RecommendationResponse {
 // 增强型推荐响应
 export interface EnhancedRecommendationResponse extends RecommendationResponse {
   queryContext: string;
-  items: EnhancedProduct[] | EnhancedActivity[];
+  items: EnhancedProduct[] | EnhancedActivity[] | EnhancedJourney[];
 }
 
 // API数据响应接口
 export interface ApiDataResponse {
-  type: "product" | "activity";
-  items: Product[] | Activity[];
+  type: "product" | "activity" | "journey";
+  items: Product[] | Activity[] | Journey[];
   isExactMatch?: boolean;
 }
 
@@ -98,4 +99,23 @@ export interface ActivityQueryParams {
   // 时间范围
   startTime?: string; // 开始日期（YYYY-MM-DD）
   endTime?: string; // 结束日期（YYYY-MM-DD）
+}
+
+// 行程接口
+export interface Journey {
+  id: string;
+  name: string;
+  location: string;
+  introduce: string;
+  image: string;
+}
+
+// 行程API响应接口
+export interface JourneyResponse {
+  data: Journey[];
+}
+
+// 增强型行程响应
+export interface EnhancedJourney extends Journey {
+  recommendReason: string;
 }

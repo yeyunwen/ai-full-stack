@@ -9,6 +9,7 @@ import {
   EnhancedRecommendationResponse,
   Product,
   Activity,
+  Journey,
 } from "@/types/chat";
 import { getSocket, closeSocket } from "@/utils/socket";
 import MessageList from "./MessageList";
@@ -281,6 +282,13 @@ export default function ChatContainer() {
     window.open(`/activity/${activity.id}`, "_blank");
   };
 
+  // 处理行程点击事件
+  const handleJourneyClick = (journey: Journey) => {
+    console.log("行程点击:", journey);
+    // 跳转到行程详情页面
+    window.open(`/journey/${journey.id}`, "_blank");
+  };
+
   return (
     <div className="flex flex-col h-[70vh] bg-gray-50 rounded-lg shadow-md overflow-hidden border border-gray-200">
       <div className="flex-1 overflow-y-auto p-4">
@@ -289,6 +297,7 @@ export default function ChatContainer() {
           isLoading={isLoading}
           onProductClick={handleProductClick}
           onActivityClick={handleActivityClick}
+          onJourneyClick={handleJourneyClick}
         />
         {error && (
           <div className="p-2 bg-red-100 text-red-700 rounded-md mt-2">

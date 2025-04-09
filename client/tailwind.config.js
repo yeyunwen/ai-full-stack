@@ -7,6 +7,9 @@ module.exports = {
   ],
   theme: {
     extend: {
+      colors: {
+        primary: "#ea4e4e",
+      },
       animation: {
         bounce: "bounce 1s infinite",
       },

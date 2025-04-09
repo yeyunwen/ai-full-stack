@@ -7,12 +7,15 @@ import {
   Product,
   Activity,
   ApiDataResponse,
+  Journey,
 } from "@/types/chat";
 import { useEffect, useRef } from "react";
 import ProductCard from "./ProductCard";
 import ActivityCard from "./ActivityCard";
+import JourneyCard from "./JourneyCard";
 import ProductCarousel from "./ProductCarousel";
 import ActivityCarousel from "./ActivityCarousel";
+import JourneyCarousel from "./JourneyCarousel";
 import MarkdownRenderer from "./MarkdownRenderer";
 
 interface MessageListProps {
@@ -20,6 +23,7 @@ interface MessageListProps {
   isLoading: boolean;
   onProductClick?: (product: Product) => void;
   onActivityClick?: (activity: Activity) => void;
+  onJourneyClick?: (journey: Journey) => void;
 }
 
 export default function MessageList({
@@ -27,6 +31,7 @@ export default function MessageList({
   isLoading,
   onProductClick,
   onActivityClick,
+  onJourneyClick,
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +58,13 @@ export default function MessageList({
   const handleActivityClick = (activity: Activity) => {
     if (onActivityClick) {
       onActivityClick(activity);
+    }
+  };
+
+  // 处理行程点击
+  const handleJourneyClick = (journey: Journey) => {
+    if (onJourneyClick) {
+      onJourneyClick(journey);
     }
   };
 
@@ -108,7 +120,7 @@ export default function MessageList({
                       </div>
                     )}
                   </div>
-                ) : (
+                ) : message.recommendation.type === IntentType.ACTIVITY ? (
                   <div className="space-y-2 mt-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {(message.recommendation.items as any[])
@@ -129,7 +141,28 @@ export default function MessageList({
                       </div>
                     )}
                   </div>
-                )}
+                ) : message.recommendation.type === IntentType.JOURNEY ? (
+                  <div className="space-y-2 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(message.recommendation.items as any[])
+                        .slice(0, 5)
+                        .map((journey) => (
+                          <JourneyCard
+                            key={journey.id}
+                            journey={journey}
+                            recommendReason={journey.recommendReason}
+                            onClick={handleJourneyClick}
+                          />
+                        ))}
+                    </div>
+                    {message.recommendation.items.length > 5 && (
+                      <div className="text-xs text-gray-500 mt-1 text-right">
+                        仅显示前5个行程，共{message.recommendation.items.length}
+                        个匹配结果
+                      </div>
+                    )}
+                  </div>
+                ) : null}
                 <div className="mt-2 text-xs text-gray-500">
                   {message.recommendation.isExactMatch ? (
                     <span className="text-green-600">✓ 精确匹配结果</span>
@@ -154,12 +187,17 @@ export default function MessageList({
                     products={message.apiData.items as Product[]}
                     onProductClick={handleProductClick}
                   />
-                ) : (
+                ) : message.apiData.type === "activity" ? (
                   <ActivityCarousel
                     activities={message.apiData.items as Activity[]}
                     onActivityClick={handleActivityClick}
                   />
-                )}
+                ) : message.apiData.type === "journey" ? (
+                  <JourneyCarousel
+                    journeys={message.apiData.items as Journey[]}
+                    onJourneyClick={handleJourneyClick}
+                  />
+                ) : null}
                 <div className="mt-2 text-xs text-gray-500 pl-4">
                   {message.apiData.isExactMatch ? (
                     <span className="text-green-600">✓ 精确匹配结果</span>

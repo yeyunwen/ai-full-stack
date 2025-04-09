@@ -17,11 +17,7 @@ import { ChatError } from './errors/chat.error';
 
 @WebSocketGateway({
   cors: {
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-    ],
+    origin: '*',
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['*'],

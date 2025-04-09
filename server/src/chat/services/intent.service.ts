@@ -33,11 +33,13 @@ export class IntentService {
             可能的意图类型有：
             1. PRODUCT - 用户想要了解或购买商品
             2. ACTIVITY - 用户想要了解活动信息
-            3. GENERAL - 用户在进行普通问答，不涉及商品或活动
+            3. JOURNEY - 用户想要行程推荐
+            4. COUPON - 用户想要优惠券推荐
+            5. GENERAL - 用户在进行普通问答，不涉及商品或活动
 
             你需要以JSON格式返回分析结果，格式为:
             {
-              "intent": "PRODUCT|ACTIVITY|GENERAL",
+              "intent": "PRODUCT|ACTIVITY|JOURNEY|COUPON|GENERAL",
               "keywords": ["关键词1", "关键词2", ...]
             }
 

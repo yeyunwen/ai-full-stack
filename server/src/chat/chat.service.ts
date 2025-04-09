@@ -15,6 +15,8 @@ import {
   ProductQueryParams,
   ActivityQueryParams,
   ApiDataResponse,
+  Journey,
+  Coupon,
 } from './interfaces/chat.interface';
 
 @Injectable()
@@ -191,6 +193,16 @@ export class ChatService {
           );
           break;
 
+        case IntentType.JOURNEY:
+          callback('\n提取路线搜索参数...', false);
+          await this.handleJourneyRecommendationStream(refinedQuery, callback);
+          break;
+
+        case IntentType.COUPON:
+          callback('\n提取优惠券搜索参数...', false);
+          await this.handleCouponRecommendationStream(refinedQuery, callback);
+          break;
+
         case IntentType.GENERAL:
         default:
           // 一般问答，使用AI流式回答
@@ -284,6 +296,70 @@ export class ChatService {
     } catch (error) {
       console.error('活动推荐流处理错误:', error);
       callback('获取活动推荐失败，请稍后再试。', true);
+    }
+  }
+
+  private async handleJourneyRecommendationStream(
+    refinedQuery: RefinedQuery,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
+  ) {
+    try {
+      // 1. 获取路线推荐
+      callback('正在为您搜索相关路线...', false);
+      const recommendation =
+        await this.recommendationService.getJourneyRecommendations();
+
+      // 2. 构建响应文本并流式返回
+      callback('\n\n' + recommendation.text + '\n\n', false);
+
+      // 3. 为活动生成推荐理由并流式返回
+      await this.generateJourneyRecommendationsStream(
+        recommendation.items as Journey[],
+        refinedQuery,
+        callback,
+      );
+
+      // 4. 发送API数据用于前端展示
+      callback('', true, {
+        type: 'journey',
+        items: recommendation.items as Journey[],
+        isExactMatch: recommendation.isExactMatch,
+      });
+    } catch (error) {
+      console.error('行程推荐流处理错误:', error);
+      callback('获取行程推荐失败，请稍后再试。', true);
+    }
+  }
+
+  private async handleCouponRecommendationStream(
+    refinedQuery: RefinedQuery,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
+  ) {
+    try {
+      // 1. 获取优惠券推荐
+      callback('正在为您搜索相关优惠券...', false);
+      const recommendation =
+        await this.recommendationService.getCouponRecommendations();
+
+      // 2. 构建响应文本并流式返回
+      callback('\n\n' + recommendation.text + '\n\n', false);
+
+      // 3. 为活动生成推荐理由并流式返回
+      await this.generateCouponRecommendationsStream(
+        recommendation.items as Coupon[],
+        refinedQuery,
+        callback,
+      );
+
+      // 4. 发送API数据用于前端展示
+      callback('', true, {
+        type: 'coupon',
+        items: recommendation.items as Coupon[],
+        isExactMatch: recommendation.isExactMatch,
+      });
+    } catch (error) {
+      console.error('优惠券推荐流处理错误:', error);
+      callback('获取优惠券推荐失败，请稍后再试。', true);
     }
   }
 
@@ -404,6 +480,126 @@ export class ChatService {
     } catch (error) {
       console.error('生成活动推荐理由流式响应时出错:', error);
       callback('无法生成详细推荐理由，但您可以查看下方活动。', false);
+    }
+  }
+
+  /**
+   * 为行程生成推荐理由并流式返回
+   * @param journeys 行程列表
+   * @param refinedQuery 优化的查询参数
+   * @param callback 回调函数
+   */
+  private async generateJourneyRecommendationsStream(
+    journeys: Journey[],
+    refinedQuery: RefinedQuery,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
+  ): Promise<void> {
+    try {
+      // 构建用于AI的提示
+      const prompt = `
+      用户查询意图: "${refinedQuery.userIntent}"
+      用户关键词: "${refinedQuery.keywords.join(', ')}"
+      ${refinedQuery.preferences ? `用户偏好: "${refinedQuery.preferences.join(', ')}"` : ''}
+      ${refinedQuery.constraints ? `用户限制条件: "${refinedQuery.constraints.join(', ')}"` : ''}
+
+      根据用户的需求，为以下行程生成一段综合推荐，突出这些行程如何满足用户需求。
+      用通俗易懂的语言，解释为什么这些行程适合用户。
+      生成的推荐内容最多不要超过300字，语言自然流畅，避免过度营销。
+      使用emoji符号开头，并且保持回答的连贯性和专业性，回答结构清晰，明了。
+
+      行程列表:
+      ${journeys.map((j) => `ID: ${j.id}, 名称: ${j.name}, 地点: ${j.location}, 介绍: ${j.introduce}`).join('\n')}
+
+      格式结构为：
+      emoji + 总体行程标题
+      ---
+      时间段 （必须项）
+      emoji + 地点名称
+      推荐理由或者地点简介描述
+      ---
+      小贴士：
+
+      `;
+
+      // 调用OpenAI API的流式接口
+      const stream = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: prompt,
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 1000,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          callback(content, false);
+        }
+      }
+    } catch (error) {
+      console.error('生成行程推荐理由流式响应时出错:', error);
+      callback('无法生成详细推荐理由，但您可以查看下方行程。', false);
+    }
+  }
+
+  private async generateCouponRecommendationsStream(
+    coupons: Coupon[],
+    refinedQuery: RefinedQuery,
+    callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
+  ): Promise<void> {
+    try {
+      // 构建用于AI的提示
+      const prompt = `
+      用户查询意图: "${refinedQuery.userIntent}"
+      用户关键词: "${refinedQuery.keywords.join(', ')}"
+      ${refinedQuery.preferences ? `用户偏好: "${refinedQuery.preferences.join(', ')}"` : ''}
+      ${refinedQuery.constraints ? `用户限制条件: "${refinedQuery.constraints.join(', ')}"` : ''}
+
+      根据用户的需求，为以下优惠券生成一段综合推荐，突出这些优惠券如何满足用户需求。
+      用通俗易懂的语言，解释为什么这些优惠券适合用户。
+      生成的推荐内容最多不要超过100字，语言自然流畅，避免过度营销。
+      使用emoji符号开头，并且保持回答的连贯性和专业性，回答结构清晰，明了。
+
+      优惠券列表:
+      ${coupons.map((j) => `ID: ${j.id}, 名称: ${j.name}, 条件: ${j.restrictionPrice}元, 折扣: ${j.discount}元 ${j.startTime}至${j.endTime}`).join('\n')}
+      `;
+
+      // 调用OpenAI API的流式接口
+      const stream = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: prompt,
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 1000,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          callback(content, false);
+        }
+      }
+    } catch (error) {
+      console.error('生成行程推荐理由流式响应时出错:', error);
+      callback('无法生成详细推荐理由，但您可以查看下方行程。', false);
     }
   }
 

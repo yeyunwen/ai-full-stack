@@ -32,6 +32,8 @@ export interface ChatError {
 export enum IntentType {
   PRODUCT = 'PRODUCT', // 商品推荐意图
   ACTIVITY = 'ACTIVITY', // 活动推荐意图
+  JOURNEY = 'JOURNEY', // 行程推荐
+  COUPON = 'COUPON', // 优惠券推荐意图
   GENERAL = 'GENERAL', // 普通问答意图
 }
 
@@ -82,10 +84,42 @@ export interface ActivityResponse {
   };
 }
 
+// 行程接口
+export interface Journey {
+  id: string;
+  name: string;
+  location: string;
+  introduce: string;
+  image: string;
+}
+
+// 行程API响应接口
+export interface JourneyResponse {
+  data: Journey[];
+}
+
+// 优惠券接口
+export interface Coupon {
+  id: number;
+  name: string;
+  discount: number;
+  restrictionPrice: number;
+  startTime: string;
+  endTime: string;
+}
+
+// 优惠券API响应接口
+export interface CouponResponse {
+  data: {
+    coupons: Coupon[];
+    flag: boolean;
+  };
+}
+
 // 推荐响应
 export interface RecommendationResponse {
   text: string;
-  items: Product[] | Activity[];
+  items: Product[] | Activity[] | Journey[] | Coupon[];
   type: IntentType;
   isExactMatch?: boolean; // 是否是精确匹配的结果
 }
@@ -141,7 +175,7 @@ export interface EnhancedRecommendationResponse {
 
 // API数据响应接口
 export interface ApiDataResponse {
-  type: 'product' | 'activity';
-  items: Product[] | Activity[];
+  type: 'product' | 'activity' | 'journey' | 'coupon';
+  items: Product[] | Activity[] | Journey[] | Coupon[];
   isExactMatch?: boolean;
 }
