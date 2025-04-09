@@ -179,3 +179,10 @@ export interface ApiDataResponse {
   items: Product[] | Activity[] | Journey[] | Coupon[];
   isExactMatch?: boolean;
 }
+
+export interface ConversationEntry {
+  user: string;
+  assistant: string | null;
+  apiData?: any;
+  dataType?: string;
+}

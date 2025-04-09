@@ -4,6 +4,7 @@ import { ChatService } from './chat.service';
 import { IntentService } from './services/intent.service';
 import { RecommendationService } from './services/recommendation.service';
 import { QueryEnhancerService } from './services/query-enhancer.service';
+import { MessageService } from './services/message.service';
 
 @Module({
   providers: [
@@ -12,6 +13,8 @@ import { QueryEnhancerService } from './services/query-enhancer.service';
     IntentService,
     RecommendationService,
     QueryEnhancerService,
+    MessageService,
   ],
+  exports: [ChatService, MessageService],
 })
 export class ChatModule {}

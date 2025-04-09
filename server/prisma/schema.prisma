@@ -1,0 +1,19 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  token       String // 用户标识
+  role        String // user 或 assistant
+  content     String   @db.Text
+  apiData     String?  @db.Text // JSON序列化的API数据
+  dataType    String? // 数据类型(product/activity/journey等)
+  createdTime DateTime @default(now())
+  updatedTime DateTime @updatedAt
+}

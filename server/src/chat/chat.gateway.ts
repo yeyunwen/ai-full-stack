@@ -15,6 +15,11 @@ import {
 } from './interfaces/chat.interface';
 import { ChatError } from './errors/chat.error';
 
+// 扩展ChatMessage接口，添加token字段
+interface ChatMessageWithToken extends ChatMessage {
+  token?: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -39,14 +44,37 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`Client disconnected: ${client.id}`);
   }
 
+  /**
+   * 生成或获取用户token
+   * @param payload 消息载荷
+   * @param client WebSocket客户端
+   * @returns 用户token
+   */
+  private getUserToken(payload: ChatMessageWithToken, client: Socket): string {
+    // 如果客户端提供了token，则使用客户端的token
+    if (payload.token) {
+      return payload.token;
+    }
+
+    // 否则使用客户端ID作为token
+    return client.id;
+  }
+
   @SubscribeMessage('chat')
   async handleChat(
     client: Socket,
-    payload: ChatMessage,
+    payload: ChatMessageWithToken,
   ): Promise<ChatResponse> {
     try {
       console.log('收到消息:', payload);
-      const response = await this.chatService.processMessage(payload.message);
+
+      // 获取用户token
+      const token = this.getUserToken(payload, client);
+
+      const response = await this.chatService.processMessage(
+        payload.message,
+        token,
+      );
       console.log('处理结果:', response);
 
       // 根据返回类型构建响应
@@ -77,13 +105,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('chat_stream')
-  async handleChatStream(client: Socket, payload: ChatMessage): Promise<void> {
+  async handleChatStream(
+    client: Socket,
+    payload: ChatMessageWithToken,
+  ): Promise<void> {
     try {
       console.log('收到流式消息请求:', payload);
+
+      // 获取用户token
+      const token = this.getUserToken(payload, client);
 
       // 使用回调函数处理流式响应
       await this.chatService.processMessageStream(
         payload.message,
+        token,
         (chunk: string, done: boolean, apiData?: ApiDataResponse) => {
           // 构建流式响应
           const streamResponse: StreamResponse = {

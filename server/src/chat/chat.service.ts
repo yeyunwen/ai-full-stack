@@ -5,6 +5,7 @@ import { ChatError } from './errors/chat.error';
 import { IntentService } from './services/intent.service';
 import { RecommendationService } from './services/recommendation.service';
 import { QueryEnhancerService } from './services/query-enhancer.service';
+import { MessageService } from './services/message.service';
 import {
   IntentType,
   // 这些接口实际上在代码中使用了，TypeScript可能无法追踪到
@@ -19,6 +20,12 @@ import {
   Coupon,
 } from './interfaces/chat.interface';
 
+// OpenAI消息类型
+interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 @Injectable()
 export class ChatService {
   private openai: OpenAI;
@@ -29,6 +36,7 @@ export class ChatService {
     private intentService: IntentService,
     private recommendationService: RecommendationService,
     private queryEnhancerService: QueryEnhancerService,
+    private messageService: MessageService,
   ) {
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('openai.apiKey'),
@@ -40,12 +48,17 @@ export class ChatService {
   /**
    * 处理用户消息，分析意图并返回相应的回复或推荐
    * @param message 用户输入的消息
+   * @param token 用户标识token
    * @returns 处理后的回复或推荐内容
    */
   async processMessage(
     message: string,
+    token: string,
   ): Promise<string | EnhancedRecommendationResponse> {
     try {
+      // 保存用户消息
+      await this.messageService.saveMessage(token, 'user', message);
+
       // 1. 分析用户消息意图
       const intentAnalysis = await this.intentService.analyzeIntent(message);
 
@@ -57,6 +70,8 @@ export class ChatService {
       );
 
       // 3. 根据意图类型处理消息
+      let response: string | EnhancedRecommendationResponse;
+
       switch (intentAnalysis.intent) {
         case IntentType.PRODUCT: {
           // 提取商品专用查询参数
@@ -82,12 +97,13 @@ export class ChatService {
             );
 
           // 返回增强的推荐响应
-          return {
+          response = {
             text: basicRecommendation.text,
             items: enhancedProducts,
             type: IntentType.PRODUCT,
             queryContext: refinedQuery.userIntent,
           };
+          break;
         }
 
         case IntentType.ACTIVITY: {
@@ -114,19 +130,45 @@ export class ChatService {
             );
 
           // 返回增强的推荐响应
-          return {
+          response = {
             text: basicRecommendation.text,
             items: enhancedActivities,
             type: IntentType.ACTIVITY,
             queryContext: refinedQuery.userIntent,
           };
+          break;
         }
 
         case IntentType.GENERAL:
         default:
           // 一般问答，使用AI回答
-          return await this.getAiResponse(message);
+          response = await this.getAiResponse(message, token);
+          break;
       }
+
+      // 如果是字符串响应，保存AI的回复
+      if (typeof response === 'string') {
+        await this.messageService.saveMessage(token, 'assistant', response);
+      } else {
+        // 对于推荐类型的响应，将文本部分保存为AI回复，并保存API数据
+        const apiData: ApiDataResponse = {
+          type: response.type.toLowerCase() as
+            | 'product'
+            | 'activity'
+            | 'journey'
+            | 'coupon',
+          items: response.items,
+          isExactMatch: response.isExactMatch,
+        };
+        await this.messageService.saveMessage(
+          token,
+          'assistant',
+          response.text,
+          apiData,
+        );
+      }
+
+      return response;
     } catch (error) {
       console.error('处理消息错误:', error);
       if (error instanceof ChatError) {
@@ -139,19 +181,47 @@ export class ChatService {
   /**
    * 流式处理用户消息，分析意图并通过回调函数返回部分结果
    * @param message 用户输入的消息
+   * @param token 用户标识token
    * @param callback 处理部分结果的回调函数
    */
   async processMessageStream(
     message: string,
+    token: string,
     callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
   ): Promise<void> {
     try {
+      // 保存用户消息
+      await this.messageService.saveMessage(token, 'user', message);
+
+      // 用于收集完整的AI响应
+      let fullResponse = '';
+
+      // 创建新的回调函数，它会收集完整响应并传递给原始回调
+      const collectCallback = (
+        chunk: string,
+        done: boolean,
+        apiData?: ApiDataResponse,
+      ) => {
+        fullResponse += chunk;
+        callback(chunk, done, apiData);
+
+        // 当流式响应完成时，保存AI的完整回复
+        if (done) {
+          // 如果有API数据，一起保存
+          this.messageService
+            .saveMessage(token, 'assistant', fullResponse, apiData)
+            .catch((err) => {
+              console.error('保存AI响应失败:', err);
+            });
+        }
+      };
+
       // 1. 分析用户消息意图
-      callback('正在分析您的问题...', false);
+      collectCallback('正在分析您的问题...', false);
       const intentAnalysis = await this.intentService.analyzeIntent(message);
 
       // 2. 提炼查询参数
-      callback('\n正在理解您的需求...', false);
+      collectCallback('\n正在理解您的需求...', false);
       const refinedQuery = await this.queryEnhancerService.refineQuery(
         message,
         intentAnalysis.intent,
@@ -165,7 +235,7 @@ export class ChatService {
       switch (intentAnalysis.intent) {
         case IntentType.PRODUCT:
           // 提取商品专用查询参数
-          callback('\n提取商品搜索参数...', false);
+          collectCallback('\n提取商品搜索参数...', false);
           productQueryParams =
             await this.queryEnhancerService.extractProductQueryParams(
               message,
@@ -174,13 +244,13 @@ export class ChatService {
           await this.handleProductRecommendationStream(
             productQueryParams,
             refinedQuery,
-            callback,
+            collectCallback,
           );
           break;
 
         case IntentType.ACTIVITY:
           // 提取活动专用查询参数
-          callback('\n提取活动搜索参数...', false);
+          collectCallback('\n提取活动搜索参数...', false);
           activityQueryParams =
             await this.queryEnhancerService.extractActivityQueryParams(
               message,
@@ -189,33 +259,47 @@ export class ChatService {
           await this.handleActivityRecommendationStream(
             activityQueryParams,
             refinedQuery,
-            callback,
+            collectCallback,
           );
           break;
 
         case IntentType.JOURNEY:
-          callback('\n提取路线搜索参数...', false);
-          await this.handleJourneyRecommendationStream(refinedQuery, callback);
+          collectCallback('\n提取路线搜索参数...', false);
+          await this.handleJourneyRecommendationStream(
+            refinedQuery,
+            collectCallback,
+          );
           break;
 
         case IntentType.COUPON:
-          callback('\n提取优惠券搜索参数...', false);
-          await this.handleCouponRecommendationStream(refinedQuery, callback);
+          collectCallback('\n提取优惠券搜索参数...', false);
+          await this.handleCouponRecommendationStream(
+            refinedQuery,
+            collectCallback,
+          );
           break;
 
         case IntentType.GENERAL:
         default:
-          // 一般问答，使用AI流式回答
-          await this.getAiResponseStream(message, callback);
+          // 一般问答，使用AI回答
+          await this.getAiResponseStream(message, token, collectCallback);
           break;
       }
     } catch (error) {
       console.error('处理流式消息错误:', error);
+      callback(`处理消息时发生错误: ${error.message}`, true);
+
+      // 保存错误消息
+      await this.messageService.saveMessage(
+        token,
+        'assistant',
+        `处理消息时发生错误: ${error.message}`,
+      );
+
       if (error instanceof ChatError) {
-        callback(`错误: ${error.message}`, true);
-      } else {
-        callback('AI服务暂时不可用，请稍后再试。', true);
+        throw error;
       }
+      throw new ChatError('AI服务暂时不可用，请稍后再试。', 'AI_SERVICE_ERROR');
     }
   }
 
@@ -246,12 +330,15 @@ export class ChatService {
         callback,
       );
 
-      // 4. 发送API数据用于前端展示
-      callback('', true, {
+      // 4. 准备API数据用于前端展示和存储
+      const apiData: ApiDataResponse = {
         type: 'product',
         items: recommendation.items as Product[],
         isExactMatch: recommendation.isExactMatch,
-      });
+      };
+
+      // 发送API数据给前端
+      callback('', true, apiData);
     } catch (error) {
       console.error('商品推荐流处理错误:', error);
       callback('获取商品推荐失败，请稍后再试。', true);
@@ -604,64 +691,115 @@ export class ChatService {
   }
 
   /**
-   * 获取AI的回复
-   * @param message 用户输入的消息
-   * @returns AI生成的回复内容
+   * 获取AI回答，同时考虑历史对话上下文
+   * @param message 用户消息
+   * @param token 用户标识
+   * @returns AI回答文本
    */
-  private async getAiResponse(message: string): Promise<string> {
-    const completion = await this.openai.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: 'system',
-          content: '你是一个有帮助的AI助手，请用简洁友好的方式回答问题。',
-        },
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-    });
+  private async getAiResponse(message: string, token: string): Promise<string> {
+    try {
+      // 获取历史对话记录
+      const history = await this.messageService.getConversationHistory(
+        token,
+        3,
+      );
 
-    return completion.choices[0]?.message?.content || '抱歉，我现在无法回答。';
+      // 构建包含历史上下文的消息列表
+      const messages: OpenAIMessage[] = [];
+
+      // 首先添加系统指令
+      messages.push({
+        role: 'system',
+        content: '你是一个有帮助的AI助手，提供清晰、准确、友好的回答。',
+      });
+
+      // 添加历史对话
+      for (const entry of history) {
+        if (entry.user) {
+          messages.push({ role: 'user', content: entry.user });
+        }
+        if (entry.assistant) {
+          messages.push({ role: 'assistant', content: entry.assistant });
+        }
+      }
+
+      // 添加当前问题
+      messages.push({ role: 'user', content: message });
+
+      const completion = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: messages,
+      });
+
+      return completion.choices[0].message.content || '抱歉，无法生成回答。';
+    } catch (error) {
+      console.error('获取AI回答错误:', error);
+      throw new ChatError(
+        'AI回答服务暂时不可用，请稍后再试。',
+        'AI_RESPONSE_ERROR',
+      );
+    }
   }
 
   /**
-   * 获取AI的流式回复
-   * @param message 用户输入的消息
-   * @param callback 处理部分结果的回调函数
+   * 获取AI流式回答，同时考虑历史对话上下文
+   * @param message 用户消息
+   * @param token 用户标识
+   * @param callback 处理流式结果的回调函数
    */
   private async getAiResponseStream(
     message: string,
+    token: string,
     callback: (chunk: string, done: boolean, apiData?: ApiDataResponse) => void,
   ): Promise<void> {
-    const stream = await this.openai.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: 'system',
-          content: '你是一个有帮助的AI助手，请用简洁友好的方式回答问题。',
-        },
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-      stream: true,
-    });
+    try {
+      // 获取历史对话记录
+      const history = await this.messageService.getConversationHistory(
+        token,
+        3,
+      );
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
+      // 构建包含历史上下文的消息列表
+      const messages: OpenAIMessage[] = [];
+
+      // 首先添加系统指令
+      messages.push({
+        role: 'system',
+        content: '你是一个有帮助的AI助手，提供清晰、准确、友好的回答。',
+      });
+
+      // 添加历史对话
+      for (const entry of history) {
+        if (entry.user) {
+          messages.push({ role: 'user', content: entry.user });
+        }
+        if (entry.assistant) {
+          messages.push({ role: 'assistant', content: entry.assistant });
+        }
+      }
+
+      // 添加当前问题
+      messages.push({ role: 'user', content: message });
+
+      const stream = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: messages,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
         callback(content, false);
       }
-    }
 
-    // 标记流结束，不传递API数据
-    callback('', true);
+      callback('', true);
+    } catch (error) {
+      console.error('获取AI流式回答错误:', error);
+      callback('AI回答服务暂时不可用，请稍后再试。', true);
+      throw new ChatError(
+        'AI回答服务暂时不可用，请稍后再试。',
+        'AI_RESPONSE_ERROR',
+      );
+    }
   }
 }
